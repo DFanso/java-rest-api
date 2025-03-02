@@ -12,6 +12,6 @@ public class HealthController {
     
     @GET
     public Response healthCheck() {
-        return Response.ok("{\"status\": \"UP\"}").build();
+        return Response.ok("{\"status\": \"200 OK 🎊\"}").build();
     }
 }

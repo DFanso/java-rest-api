@@ -1,7 +1,6 @@
 package com.example.service;
 
 import com.example.model.User;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -9,7 +8,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class UserService {
     private final Map<Long, User> users = new ConcurrentHashMap<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private long nextId = 1;
 
     public List<User> getAllUsers() {

@@ -2,120 +2,139 @@ package com.example.controller;
 
 import com.example.model.User;
 import com.example.service.UserService;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpExchange;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import javax.ws.rs.*;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import java.util.List;
 
-public class UserController implements HttpHandler {
+@Path("/users")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class UserController {
     private static final Logger logger = LoggerFactory.getLogger(UserController.class);
     private final UserService userService;
-    private final ObjectMapper objectMapper;
 
     public UserController() {
         this.userService = new UserService();
-        this.objectMapper = new ObjectMapper();
     }
 
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-        String method = exchange.getRequestMethod();
-        String path = exchange.getRequestURI().getPath();
-        String response = "";
-        int responseCode = 200;
-
+    @GET
+    public Response getAllUsers() {
         try {
-            switch (method) {
-                case "GET":
-                    if (path.matches("/api/users/\\d+")) {
-                        Long id = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
-                        response = handleGetUser(id);
-                        if (response == null) {
-                            response = "{\"error\": \"User not found\"}";
-                            responseCode = 404;
-                        }
-                    } else {
-                        response = handleGetAllUsers();
-                    }
-                    break;
-
-                case "POST":
-                    response = handleCreateUser(exchange.getRequestBody());
-                    responseCode = 201;
-                    break;
-
-                case "PUT":
-                    if (path.matches("/api/users/\\d+")) {
-                        Long id = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
-                        response = handleUpdateUser(id, exchange.getRequestBody());
-                        if (response == null) {
-                            response = "{\"error\": \"User not found\"}";
-                            responseCode = 404;
-                        }
-                    } else {
-                        response = "{\"error\": \"Invalid path\"}";
-                        responseCode = 400;
-                    }
-                    break;
-
-                case "DELETE":
-                    if (path.matches("/api/users/\\d+")) {
-                        Long id = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
-                        boolean deleted = userService.deleteUser(id);
-                        responseCode = deleted ? 204 : 404;
-                        response = deleted ? "" : "{\"error\": \"User not found\"}";
-                    } else {
-                        response = "{\"error\": \"Invalid path\"}";
-                        responseCode = 400;
-                    }
-                    break;
-
-                default:
-                    response = "{\"error\": \"Method not allowed\"}";
-                    responseCode = 405;
-            }
+            List<User> users = userService.getAllUsers();
+            return Response.ok(users).build();
         } catch (Exception e) {
-            logger.error("Error processing request", e);
-            response = "{\"error\": \"" + e.getMessage() + "\"}";
-            responseCode = 400;
+            logger.error("Error getting all users", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
         }
+    }
 
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        byte[] responseBytes = response.getBytes();
-        exchange.sendResponseHeaders(responseCode, responseBytes.length == 0 ? -1 : responseBytes.length);
-        
-        if (responseBytes.length > 0) {
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(responseBytes);
+    @GET
+    @Path("/{id}")
+    public Response getUser(@PathParam("id") Long id) {
+        try {
+            User user = userService.getUser(id);
+            if (user == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                             .entity(new ErrorResponse("User not found"))
+                             .build();
             }
+            return Response.ok(user).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        } catch (Exception e) {
+            logger.error("Error getting user with id: " + id, e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
         }
     }
 
-    private String handleGetAllUsers() throws IOException {
-        List<User> users = userService.getAllUsers();
-        return objectMapper.writeValueAsString(users);
+    @POST
+    public Response createUser(User user) {
+        try {
+            User createdUser = userService.createUser(user);
+            return Response.status(Response.Status.CREATED)
+                         .entity(createdUser)
+                         .build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        } catch (Exception e) {
+            logger.error("Error creating user", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        }
     }
 
-    private String handleGetUser(Long id) throws IOException {
-        User user = userService.getUser(id);
-        return user != null ? objectMapper.writeValueAsString(user) : null;
+    @PUT
+    @Path("/{id}")
+    public Response updateUser(@PathParam("id") Long id, User user) {
+        try {
+            User updatedUser = userService.updateUser(id, user);
+            if (updatedUser == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                             .entity(new ErrorResponse("User not found"))
+                             .build();
+            }
+            return Response.ok(updatedUser).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        } catch (Exception e) {
+            logger.error("Error updating user with id: " + id, e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        }
     }
 
-    private String handleCreateUser(InputStream requestBody) throws IOException {
-        User user = objectMapper.readValue(requestBody, User.class);
-        User createdUser = userService.createUser(user);
-        return objectMapper.writeValueAsString(createdUser);
+    @DELETE
+    @Path("/{id}")
+    public Response deleteUser(@PathParam("id") Long id) {
+        try {
+            boolean deleted = userService.deleteUser(id);
+            if (!deleted) {
+                return Response.status(Response.Status.NOT_FOUND)
+                             .entity(new ErrorResponse("User not found"))
+                             .build();
+            }
+            return Response.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        } catch (Exception e) {
+            logger.error("Error deleting user with id: " + id, e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                         .entity(new ErrorResponse(e.getMessage()))
+                         .build();
+        }
     }
 
-    private String handleUpdateUser(Long id, InputStream requestBody) throws IOException {
-        User user = objectMapper.readValue(requestBody, User.class);
-        User updatedUser = userService.updateUser(id, user);
-        return updatedUser != null ? objectMapper.writeValueAsString(updatedUser) : null;
+    private static class ErrorResponse {
+        private String error;
+
+        public ErrorResponse(String message) {
+            this.error = message;
+        }
+
+        public String getError() {
+            return error;
+        }
+
+        public void setError(String error) {
+            this.error = error;
+        }
     }
 }
