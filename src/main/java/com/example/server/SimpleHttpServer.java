@@ -21,7 +21,8 @@ public class SimpleHttpServer {
         server.setExecutor(Executors.newFixedThreadPool(10));
         
         // Register context handlers
-        server.createContext("/api/users", new UserController());
+        UserController userController = new UserController();
+        server.createContext("/api/users", userController);
         server.createContext("/api/health", new HealthCheckHandler());
         
         server.start();

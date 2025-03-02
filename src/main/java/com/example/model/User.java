@@ -1,5 +1,8 @@
 package com.example.model;
 
+import javax.xml.bind.annotation.XmlRootElement;
+
+@XmlRootElement
 public class User {
     private Long id;
     private String name;

@@ -1,15 +1,20 @@
 package com.example.controller;
 
+import com.example.model.User;
+import com.example.service.UserService;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.example.model.User;
-import com.example.service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 
 public class UserController implements HttpHandler {
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
     private final UserService userService;
     private final ObjectMapper objectMapper;
 
@@ -22,140 +27,95 @@ public class UserController implements HttpHandler {
     public void handle(HttpExchange exchange) throws IOException {
         String method = exchange.getRequestMethod();
         String path = exchange.getRequestURI().getPath();
-        String[] pathParts = path.split("/");
-        
-        // Log incoming request
-        System.out.println(String.format("[%s] %s - %s", 
-            java.time.LocalDateTime.now(), 
-            method, 
-            path));
+        String response = "";
+        int responseCode = 200;
 
-        // Handle CORS preflight requests
-        if (method.equals("OPTIONS")) {
-            handleCorsPreflightRequest(exchange);
-            return;
-        }
-
-        // Validate content type for requests with body
-        if ((method.equals("POST") || method.equals("PUT")) && 
-            !"application/json".equals(exchange.getRequestHeaders().getFirst("Content-Type"))) {
-            sendResponse(exchange, 415, "{\"error\": \"Content-Type must be application/json\"}");
-            return;
-        }
-        
         try {
             switch (method) {
                 case "GET":
-                    if (pathParts.length == 3) {
-                        handleGetAllUsers(exchange);
-                    } else if (pathParts.length == 4) {
-                        handleGetUser(exchange, Long.parseLong(pathParts[3]));
+                    if (path.matches("/api/users/\\d+")) {
+                        Long id = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
+                        response = handleGetUser(id);
+                        if (response == null) {
+                            response = "{\"error\": \"User not found\"}";
+                            responseCode = 404;
+                        }
                     } else {
-                        sendResponse(exchange, 400, "{\"error\": \"Invalid path\"}");
+                        response = handleGetAllUsers();
                     }
                     break;
+
                 case "POST":
-                    if (pathParts.length == 3) {
-                        handleCreateUser(exchange);
-                    } else {
-                        sendResponse(exchange, 400, "{\"error\": \"Invalid path\"}");
-                    }
+                    response = handleCreateUser(exchange.getRequestBody());
+                    responseCode = 201;
                     break;
+
                 case "PUT":
-                    if (pathParts.length == 4) {
-                        handleUpdateUser(exchange, Long.parseLong(pathParts[3]));
+                    if (path.matches("/api/users/\\d+")) {
+                        Long id = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
+                        response = handleUpdateUser(id, exchange.getRequestBody());
+                        if (response == null) {
+                            response = "{\"error\": \"User not found\"}";
+                            responseCode = 404;
+                        }
                     } else {
-                        sendResponse(exchange, 400, "{\"error\": \"Invalid path\"}");
+                        response = "{\"error\": \"Invalid path\"}";
+                        responseCode = 400;
                     }
                     break;
+
                 case "DELETE":
-                    if (pathParts.length == 4) {
-                        handleDeleteUser(exchange, Long.parseLong(pathParts[3]));
+                    if (path.matches("/api/users/\\d+")) {
+                        Long id = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
+                        boolean deleted = userService.deleteUser(id);
+                        responseCode = deleted ? 204 : 404;
+                        response = deleted ? "" : "{\"error\": \"User not found\"}";
                     } else {
-                        sendResponse(exchange, 400, "{\"error\": \"Invalid path\"}");
+                        response = "{\"error\": \"Invalid path\"}";
+                        responseCode = 400;
                     }
                     break;
+
                 default:
-                    sendResponse(exchange, 405, "{\"error\": \"Method not allowed\"}");
+                    response = "{\"error\": \"Method not allowed\"}";
+                    responseCode = 405;
             }
-        } catch (NumberFormatException e) {
-            sendResponse(exchange, 400, "{\"error\": \"Invalid user ID\"}");
-        } catch (IllegalArgumentException e) {
-            sendResponse(exchange, 400, "{\"error\": \"" + e.getMessage() + "\"}");
-        } catch (IOException e) {
-            System.err.println("Error processing request: " + e.getMessage());
-            sendResponse(exchange, 400, "{\"error\": \"Error processing request\"}");
         } catch (Exception e) {
-            System.err.println("Internal server error: " + e.getMessage());
-            e.printStackTrace();
-            sendResponse(exchange, 500, "{\"error\": \"Internal server error\"}");
+            logger.error("Error processing request", e);
+            response = "{\"error\": \"" + e.getMessage() + "\"}";
+            responseCode = 400;
         }
-    }
 
-    private void handleCorsPreflightRequest(HttpExchange exchange) throws IOException {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-        exchange.getResponseHeaders().set("Access-Control-Max-Age", "86400");
-        exchange.sendResponseHeaders(204, -1);
-    }
-
-    private void handleGetAllUsers(HttpExchange exchange) throws IOException {
-        List<User> userList = userService.getAllUsers();
-        String response = objectMapper.writeValueAsString(userList);
-        sendResponse(exchange, 200, response);
-    }
-
-    private void handleGetUser(HttpExchange exchange, Long id) throws IOException {
-        User user = userService.getUser(id);
-        if (user != null) {
-            String response = objectMapper.writeValueAsString(user);
-            sendResponse(exchange, 200, response);
-        } else {
-            sendResponse(exchange, 404, "{\"error\": \"User not found\"}");
-        }
-    }
-
-    private void handleCreateUser(HttpExchange exchange) throws IOException {
-        User user = objectMapper.readValue(exchange.getRequestBody(), User.class);
-        User createdUser = userService.createUser(user);
-        String response = objectMapper.writeValueAsString(createdUser);
-        sendResponse(exchange, 201, response);
-    }
-
-    private void handleUpdateUser(HttpExchange exchange, Long id) throws IOException {
-        User userToUpdate = objectMapper.readValue(exchange.getRequestBody(), User.class);
-        User updatedUser = userService.updateUser(id, userToUpdate);
-        if (updatedUser != null) {
-            String response = objectMapper.writeValueAsString(updatedUser);
-            sendResponse(exchange, 200, response);
-        } else {
-            sendResponse(exchange, 404, "{\"error\": \"User not found\"}");
-        }
-    }
-
-    private void handleDeleteUser(HttpExchange exchange, Long id) throws IOException {
-        if (userService.deleteUser(id)) {
-            sendResponse(exchange, 204, "");
-        } else {
-            sendResponse(exchange, 404, "{\"error\": \"User not found\"}");
-        }
-    }
-
-    private void sendResponse(HttpExchange exchange, int statusCode, String response) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+        byte[] responseBytes = response.getBytes();
+        exchange.sendResponseHeaders(responseCode, responseBytes.length == 0 ? -1 : responseBytes.length);
         
-        if (response.isEmpty()) {
-            exchange.sendResponseHeaders(statusCode, -1);
-        } else {
-            byte[] responseBytes = response.getBytes("UTF-8");
-            exchange.sendResponseHeaders(statusCode, responseBytes.length);
+        if (responseBytes.length > 0) {
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(responseBytes);
             }
         }
+    }
+
+    private String handleGetAllUsers() throws IOException {
+        List<User> users = userService.getAllUsers();
+        return objectMapper.writeValueAsString(users);
+    }
+
+    private String handleGetUser(Long id) throws IOException {
+        User user = userService.getUser(id);
+        return user != null ? objectMapper.writeValueAsString(user) : null;
+    }
+
+    private String handleCreateUser(InputStream requestBody) throws IOException {
+        User user = objectMapper.readValue(requestBody, User.class);
+        User createdUser = userService.createUser(user);
+        return objectMapper.writeValueAsString(createdUser);
+    }
+
+    private String handleUpdateUser(Long id, InputStream requestBody) throws IOException {
+        User user = objectMapper.readValue(requestBody, User.class);
+        User updatedUser = userService.updateUser(id, user);
+        return updatedUser != null ? objectMapper.writeValueAsString(updatedUser) : null;
     }
 }

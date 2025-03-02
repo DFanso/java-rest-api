@@ -1,5 +1,5 @@
+com\example\config\JerseyConfig.class
+com\example\controller\HealthController.class
 com\example\service\UserService.class
-com\example\server\SimpleHttpServer.class
 com\example\model\User.class
 com\example\controller\UserController.class
-com\example\server\SimpleHttpServer$HealthCheckHandler.class
