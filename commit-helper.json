@@ -1,0 +1,9 @@
+{
+  "grok_api": "https://api.x.ai/v1/chat/completions",
+  "repos": {
+    "java-rest-api": {
+      "path": "F:/Git/java-rest-api",
+      "last_run": "2025-03-02T20:01:15+05:30"
+    }
+  }
+}
