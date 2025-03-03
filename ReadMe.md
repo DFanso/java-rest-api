@@ -48,7 +48,7 @@ curl -X PUT http://localhost:8000/api/users/1 \
 ```bash
 curl -X DELETE http://localhost:8000/api/users/1
 ```
-`
+
 ```
 mvn clean
 mvn install
